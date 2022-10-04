@@ -17,6 +17,7 @@ from occupancy_field import OccupancyField
 from helper_functions import TFHelper
 from rclpy.qos import qos_profile_sensor_data
 from angle_helpers import quaternion_from_euler
+from random import normalvariate 
 
 class Particle(object):
     """ Represents a hypothesis (particle) of the robot's pose consisting of x,y and theta (yaw)
@@ -133,17 +134,17 @@ class ParticleFilter(Node):
         if self.scan_to_process is None:
             return
         msg = self.scan_to_process
-
+        
+        #new_pose is in odom frame
         (new_pose, delta_t) = self.transform_helper.get_matching_odom_pose(self.odom_frame,
                                                                            self.base_frame,
-                                                                           msg.header.stamp)
+                                                                              msg.header.stamp)
         if new_pose is None:
             # we were unable to get the pose of the robot corresponding to the scan timestamp
             if delta_t is not None and delta_t < Duration(seconds=0.0):
                 # we will never get this transform, since it is before our oldest one
                 self.scan_to_process = None
             return
-        
         (r, theta) = self.transform_helper.convert_scan_to_polar_in_robot_frame(msg, self.base_frame)
         print("r[0]={0}, theta[0]={1}".format(r[0], theta[0]))
         # clear the current scan so that we can process the next one
@@ -209,6 +210,10 @@ class ParticleFilter(Node):
             return
 
         # TODO: modify particles using delta
+        for i in range(self.n_particles): 
+            self.particle_cloud[i].x += delta[0]
+            self.particle_cloud[i].y += delta[1]
+            self.particle_cloud[i].theta += delta[2]
 
     def resample_particles(self):
         """ Resample the particles according to the new particle weights.
@@ -219,6 +224,8 @@ class ParticleFilter(Node):
         # make sure the distribution is normalized
         self.normalize_particles()
         # TODO: fill out the rest of the implementation
+        # 
+        
 
     def update_particles_with_laser(self, r, theta):
         """ Updates the particle weights in response to the scan data
@@ -244,15 +251,28 @@ class ParticleFilter(Node):
         if xy_theta is None:
             xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
         self.particle_cloud = []
-        # TODO create particles
+
+        #edited
+        w = 1/self.n_particles
+        # Initialize particle around neato position
+        for i in range(self.n_particles):
+            x = normalvariate(self.current_odom_xy_theta[0],0.1) #mean and standard deviation
+            y = normalvariate(self.current_odom_xy_theta[1],0.1)
+            z = normalvariate(self.current_odom_xy_theta[2],0.01)
+            self.particle_cloud.append(Particle(x=x,y=y,z=z,w=w))
 
         self.normalize_particles()
         self.update_robot_pose()
 
     def normalize_particles(self):
         """ Make sure the particle weights define a valid distribution (i.e. sum to 1.0) """
-        # TODO: implement this
-        pass
+        #edited
+        #sums all the weights, and normalize them to one
+        total_weights = 0
+        for i in range(self.n_particles):
+            total_weights += self.particle_cloud[i].w
+        for i in range(self.n_particles):
+            self.n_particles[i].w = self.particle_cloud[i].w/total_weights
 
     def publish_particles(self, timestamp):
         particles_conv = []
