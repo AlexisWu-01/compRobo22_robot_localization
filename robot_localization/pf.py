@@ -2,6 +2,7 @@
 
 """ This is the starter code for the robot localization project """
 
+from compRobo22_robot_localization.robot_localization import occupancy_field
 import rclpy
 from threading import Thread
 from rclpy.time import Time
@@ -13,6 +14,7 @@ from rclpy.duration import Duration
 import math
 import time
 import numpy as np
+from helper_functions import compute_prob_zero_centered_gaussian
 from occupancy_field import OccupancyField
 from helper_functions import TFHelper
 from rclpy.qos import qos_profile_sensor_data
@@ -80,10 +82,11 @@ class ParticleFilter(Node):
         self.d_thresh = 0.2             # the amount of linear movement before performing an update
         self.a_thresh = math.pi/6       # the amount of angular movement before performing an update
 
-        # TODO: define additional constants if needed
+        # EDITED: define additional constants if needed
+        self.std_dev = 0.1
 
         # pose_listener responds to selection of a new approximate robot location (for instance using rviz)
-        self.create_subscription(PoseWithCovarianceStamped, 'initialpose', self.update_initial_pose, 10)
+        self.create_subscription(PoseWithCovarianceStamped, 'initial_pose', self.update_initial_pose, 10)
 
         # publish the current particle cloud.  This enables viewing particles in rviz.
         self.particle_pub = self.create_publisher(PoseArray, "particlecloud", qos_profile_sensor_data)
@@ -207,9 +210,29 @@ class ParticleFilter(Node):
             self.current_odom_xy_theta = new_odom_xy_theta
         else:
             self.current_odom_xy_theta = new_odom_xy_theta
+        
             return
+        x1 = old_odom_xy_theta[0]
+        y1 = old_odom_xy_theta[1]
+        theta1 = old_odom_xy_theta[2]
 
-        # TODO: modify particles using delta
+        x2  = new_odom_xy_theta[0]
+        y2 = new_odom_xy_theta[1]
+        theta2 = new_odom_xy_theta[2]
+
+        # Edited: modify particles using delta
+        # This updates all particles
+        t1_mat = np.array([[np.cos(theta1,-np.sin(theta1),x1)],[np.sin(theta1),np.cos(theta1),y1],[0,0,1]])
+        t2_mat = np.array([[np.cos(theta2,-np.sin(theta2),x2)],[np.sin(theta2),np.cos(theta2),y2],[0,0,1]])
+        trans_mat = np.multiply(t1_mat.T,t2_mat)
+
+        for i in range(self.n_particles):
+            p = self.particle_cloud[i]
+            particle_mat = np.array([p.x,p.y,1])
+            new_mat = np.multiply(trans_mat,particle_mat)
+            self.particle_cloud[i].x = new_mat[0]
+            self.particle_cloud[i].y = new_mat[1]
+            self.particle_cloud[i].theta = delta[2] + self.particle_cloud[i]
    
 
     def resample_particles(self):
@@ -229,8 +252,21 @@ class ParticleFilter(Node):
             r: the distance readings to obstacles
             theta: the angle relative to the robot frame for each corresponding reading 
         """
-        # TODO: implement this
-        pass
+        # EDITED: implement this
+        for j in range(self.n_particles):
+            q = 1
+            for i in range(len(r)):
+                if r[i] < self.scan_to_process.range_max:
+                    mx = self.current_odom_xy_theta[0] + r[i]*np.cos(theta)
+                    my = self.current_odom_xy_theta[1] + r[i] * np.sin(theta)
+                    d = self.occupancy_field.get_closest_obstacle_distance(mx,my)
+                    q *= 1/(np.sqrt(2*np.pi*self.std_dev)) * np.exp(-d**2/(2*self.std_dev**2))
+            self.particle_cloud[i].w = q
+        self.normalize_particles()
+
+        
+
+
 
     def update_initial_pose(self, msg):
         """ Callback function to handle re-initializing the particle filter based on a pose estimate.
@@ -257,10 +293,11 @@ class ParticleFilter(Node):
             self.particle_cloud.append(Particle(x=x,y=y,z=z,w=w))
 
         self.normalize_particles()
+        self.update_robot_pose()
 
     def normalize_particles(self):
         """ Make sure the particle weights define a valid distribution (i.e. sum to 1.0) """
-        #edited
+        #EDITED
         #sums all the weights, and normalize them to one
         total_weights = 0
         for i in range(self.n_particles):

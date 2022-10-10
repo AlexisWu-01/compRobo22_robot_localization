@@ -16,6 +16,13 @@ from copy import deepcopy
 from numpy.random import random_sample
 import PyKDL
 
+def compute_prob_zero_centered_gaussian(dist, sd):
+    """ Takes in distance from zero (dist) and standard deviation (sd) for gaussian
+        and returns probability (likelihood) of observation """
+    c = 1.0 / (sd * math.sqrt(2 * math.pi))
+    prob = c * math.exp((-math.pow(dist,2))/(2 * math.pow(sd, 2)))
+    return prob
+
 def stamped_transform_to_pose(t):
     t = t.transform
     return Pose(position=Point(x=t.translation.x, y=t.translation.y, z=t.translation.z),
