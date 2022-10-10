@@ -135,7 +135,7 @@ class ParticleFilter(Node):
             return
         msg = self.scan_to_process
         
-        #new_pose is in odom frame
+        # new_pose is in odom frame
         (new_pose, delta_t) = self.transform_helper.get_matching_odom_pose(self.odom_frame,
                                                                            self.base_frame,
                                                                               msg.header.stamp)
@@ -210,10 +210,7 @@ class ParticleFilter(Node):
             return
 
         # TODO: modify particles using delta
-        for i in range(self.n_particles): 
-            self.particle_cloud[i].x += delta[0]
-            self.particle_cloud[i].y += delta[1]
-            self.particle_cloud[i].theta += delta[2]
+   
 
     def resample_particles(self):
         """ Resample the particles according to the new particle weights.
