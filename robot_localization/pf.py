@@ -19,7 +19,8 @@ from occupancy_field import OccupancyField
 from helper_functions import TFHelper
 from rclpy.qos import qos_profile_sensor_data
 from angle_helpers import quaternion_from_euler
-from random import normalvariate 
+from random import normalvariate, uniform
+from collections import Counter
 
 class Particle(object):
     """ Represents a hypothesis (particle) of the robot's pose consisting of x,y and theta (yaw)
@@ -186,12 +187,26 @@ class ParticleFilter(Node):
         # first make sure that the particle weights are normalized
         self.normalize_particles()
 
-        # TODO: assign the latest pose into self.robot_pose as a geometry_msgs.Pose object
+        # EDITED: assign the latest pose into self.robot_pose as a geometry_msgs.Pose object
         # just to get started we will fix the robot's pose to always be at the origin
         self.robot_pose = Pose()
 
         self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
                                                         self.odom_pose)
+
+        # This is the mode operation for finding the most possible pose
+        for i in range(self.n_particles):
+            # round the positions: x, y to 0.01 and theta to 0.01
+            self.particle_cloud[i].x = round(self.particle_cloud[i].x , 2)
+            self.particle_cloud[i].y = round(self.particle_cloud[i].y , 2)
+            self.particle_cloud[i].z = round(self.particle_cloud[i].z , 2)
+        
+
+        dict = Counter(self.particle_cloud)
+        possible_pose = max(dict,key=dict.get)
+        self.robot_pose.position.x = possible_pose[0]
+        self.robot_pose.position.y = possible_pose[1]
+        self.robot_pose.orientation.z = possible_pose[2]
 
     def update_particles_with_odom(self):
         """ Update the particles using the newly given odometry pose.
@@ -243,9 +258,22 @@ class ParticleFilter(Node):
         """
         # make sure the distribution is normalized
         self.normalize_particles()
-        # TODO: fill out the rest of the implementation
-        # 
+        # EDITED: fill out the rest of the implementation
+        new_samples = []
+        cumulative_weight = self.particle_cloud[0].w
+        i = 0
+        #generates a random number as our first pointer
+        r = uniform(0,1/self.n_particles) 
+        for j in range(self.n_particles):
+            U = r + j * 1/self.n_particles
+            while U > cumulative_weight:
+                i += 1
+                cumulative_weight += self.particle_cloud[i].w
+            new_samples.append(self.particle_cloud[i])
+        self.particle_cloud = new_samples
+
         
+            
 
     def update_particles_with_laser(self, r, theta):
         """ Updates the particle weights in response to the scan data
@@ -262,7 +290,6 @@ class ParticleFilter(Node):
                     d = self.occupancy_field.get_closest_obstacle_distance(mx,my)
                     q *= 1/(np.sqrt(2*np.pi*self.std_dev)) * np.exp(-d**2/(2*self.std_dev**2))
             self.particle_cloud[i].w = q
-        self.normalize_particles()
 
         
 
