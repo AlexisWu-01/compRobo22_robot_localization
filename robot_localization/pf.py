@@ -20,6 +20,7 @@ from rclpy.qos import qos_profile_sensor_data
 from angle_helpers import quaternion_from_euler
 from random import normalvariate, uniform
 from collections import Counter
+from copy import deepcopy
 
 class Particle(object):
     """ Represents a hypothesis (particle) of the robot's pose consisting of x,y and theta (yaw)
@@ -87,7 +88,7 @@ class ParticleFilter(Node):
         self.max_scan_range = 10
 
         # pose_listener responds to selection of a new approximate robot location (for instance using rviz)
-        self.create_subscription(PoseWithCovarianceStamped, 'initial_pose', self.update_initial_pose, 10)
+        self.create_subscription(PoseWithCovarianceStamped, 'initialpose', self.update_initial_pose, 10)
 
         # publish the current particle cloud.  This enables viewing particles in rviz.
         self.particle_pub = self.create_publisher(PoseArray, "particlecloud", qos_profile_sensor_data)
@@ -150,13 +151,13 @@ class ParticleFilter(Node):
                 self.scan_to_process = None
             return
         (r, theta) = self.transform_helper.convert_scan_to_polar_in_robot_frame(msg, self.base_frame)
-        print("r[0]={0}, theta[0]={1}".format(r[0], theta[0]))
+        #print("r[0]={0}, theta[0]={1}".format(r[0], theta[0]))
         # clear the current scan so that we can process the next one
         self.scan_to_process = None
 
         self.odom_pose = new_pose
         new_odom_xy_theta = self.transform_helper.convert_pose_to_xy_and_theta(self.odom_pose)
-        print("x: {0}, y: {1}, yaw: {2}".format(*new_odom_xy_theta))
+        #print("x: {0}, y: {1}, yaw: {2}".format(*new_odom_xy_theta))
 
         if not self.current_odom_xy_theta:
             self.current_odom_xy_theta = new_odom_xy_theta
@@ -187,25 +188,13 @@ class ParticleFilter(Node):
         # first make sure that the particle weights are normalized
         self.normalize_particles()
 
-        # EDITED: assign the latest pose into self.robot_pose as a geometry_msgs.Pose object
-        # just to get started we will fix the robot's pose to always be at the origin
-        self.robot_pose = Pose()
+        # Mode operation: find the particle with largest weight
+        weight_list = [p.w for p in self.particle_cloud]
+        pose_index = np.argmax(weight_list)
+        self.robot_pose = self.particle_cloud[pose_index].as_pose()
 
         self.transform_helper.fix_map_to_odom_transform(self.robot_pose,
                                                         self.odom_pose)
-
-        # Mode operation: find the particle with largest weight
-        weight_list = [p.w for p in self.particle_cloud]
-        print("weight_list: ",weight_list)
-        pose_index = np.argmax(weight_list)
-        possible_pose = self.particle_cloud[pose_index]
-        print(possible_pose)
-        print(possible_pose.x)
-        print(possible_pose.y)
-        print(possible_pose.theta)
-
-        print("w = ",self.particle_cloud[pose_index].w)
-        self.robot_pose = self.particle_cloud[pose_index].as_pose()
 
     def update_particles_with_odom(self):
         """ Update the particles using the newly given odometry pose.
@@ -238,15 +227,19 @@ class ParticleFilter(Node):
         # This updates all particles
         t1_mat = np.array([[np.cos(theta1),-np.sin(theta1),x1],[np.sin(theta1),np.cos(theta1),y1],[0,0,1.0]])
         t2_mat = np.array([[np.cos(theta2),-np.sin(theta2),x2],[np.sin(theta2),np.cos(theta2),y2],[0,0,1.0]])
-        trans_mat = np.dot(t1_mat.T,t2_mat)
+        trans_mat = np.linalg.inv(t1_mat) @ t2_mat
 
         for i in range(self.n_particles):
             p = self.particle_cloud[i]
-            particle_mat = np.array([p.x,p.y,1])
-            new_mat = np.dot(trans_mat,particle_mat)
-            self.particle_cloud[i].x = new_mat[0]
-            self.particle_cloud[i].y = new_mat[1]
-            self.particle_cloud[i].theta = delta[2] + self.particle_cloud[i].theta
+            # particle_mat matches the particle frame to map frame
+            particle_mat = np.array([[np.cos(p.theta), -np.sin(p.theta),p.x],
+                                     [np.sin(p.theta), np.cos(p.theta),p.y],
+                                     [0, 0, 1.0]])
+            new_mat = particle_mat @ trans_mat[:,2]
+            # add some noise to the new particles
+            self.particle_cloud[i].x = new_mat[0] + np.random.randn()*0.01
+            self.particle_cloud[i].y = new_mat[1] + np.random.randn()*0.01
+            self.particle_cloud[i].theta = delta[2] + self.particle_cloud[i].theta + np.random.randn()*0.01
    
 
     def resample_particles(self):
@@ -269,8 +262,7 @@ class ParticleFilter(Node):
             while U > cumulative_weight:
                 i += 1
                 cumulative_weight += self.particle_cloud[i].w
-            new_samples.append(self.particle_cloud[i])
-        print(new_samples)
+            new_samples.append(deepcopy(self.particle_cloud[i]))
         self.particle_cloud = new_samples
 
         
@@ -281,7 +273,6 @@ class ParticleFilter(Node):
             r: the distance readings to obstacles
             theta: the angle relative to the robot frame for each corresponding reading 
         """
-        pass
         # EDITED: implement this
         # print('checking the distances')
         for j in range(self.n_particles):
@@ -289,18 +280,21 @@ class ParticleFilter(Node):
             for i in range(len(r)):
                 # if r[i] < self.scan_to_process.range_max:
                 if r[i] < self.max_scan_range:
-                    mx = self.current_odom_xy_theta[0] + r[i]*np.cos(theta[i])
-                    my = self.current_odom_xy_theta[1] + r[i] * np.sin(theta[i])
+                    mx = self.particle_cloud[j].x + r[i]*np.cos(theta[i]+self.particle_cloud[j].theta)
+                    my = self.particle_cloud[j].y + r[i] * np.sin(theta[i]+self.particle_cloud[j].theta)
                     d = self.occupancy_field.get_closest_obstacle_distance(mx,my)
-                    if np.isnan(d):
-                        print("d is nan")
-                        q = q
-                    else:
-                        q *= 1/(np.sqrt(2*np.pi*self.std_dev)) * np.exp(-d**2/(2*self.std_dev**2))
+                    if not np.isnan(d):
+                        # add bonus to weight according to distance, the cube was to make the bonus higher when it's close
+                        v = 1/(np.sqrt(2*np.pi*self.std_dev)) * np.exp(-d**2/(2*self.std_dev**2))
+                        q += v**3
+                        #if np.isnan(q):
+                        #    print("found a nan")
                     # q *= compute_prob_zero_centered_gaussian(d,self.std_dev)
                    
             self.particle_cloud[j].w = q
-            print(q)
+            if np.isnan(q):
+                print("found a nan")
+        print("weights updated")
         
 
 
@@ -324,9 +318,9 @@ class ParticleFilter(Node):
         w = float(1/self.n_particles)
         # Initialize particle around neato position
         for i in range(self.n_particles):
-            x = float(normalvariate(self.current_odom_xy_theta[0],0.1)) #mean and standard deviation
-            y = float(normalvariate(self.current_odom_xy_theta[1],0.1))
-            theta = float(normalvariate(self.current_odom_xy_theta[2],0.01))
+            x = float(normalvariate(xy_theta[0],0.1)) #mean and standard deviation
+            y = float(normalvariate(xy_theta[1],0.1))
+            theta = float(normalvariate(xy_theta[2],0.01))
             self.particle_cloud.append(Particle(x=x,y=y,theta=theta,w=w))
 
         self.update_robot_pose()
