@@ -1,12 +1,11 @@
 > # Robot Locolization
 > Author: Alexis Wu <br>
-> Created in Oct. 2022
+> Oct. 2022
 - All source code can be found in https://github.com/AlexisWu-01/compRobo22_robot_localization
 
 ---
 
 
-- What was the goal of your project?
 - How did you solve the problem? (Note: this doesn’t have to be super-detailed, you should try to explain what you did at a high-level so that others in the class could reasonably understand what you did).
 - Describe a design decision you had to make when working on your project and what you ultimately did (and why)? These design decisions could be particular choices for how you implemented some part of an algorithm or perhaps a decision regarding which of two external packages to use in your project.
 What if any challenges did you face along the way?
@@ -29,16 +28,28 @@ Here is a diagram of a general idea of how our program works:
 ![Work map](https://github.com/AlexisWu-01/compRobo22_robot_localization/blob/main/demo_resources/work_map.png)
 
 # Implementation 
-Here is a recording of how our particle filter works:
+Here is a recording of how the particle filter performs:
 
 <a href="url"><img src="https://github.com/AlexisWu-01/compRobo22_robot_localization/blob/main/demo_resources/pf_demo.gif" width="2000" ></a>
 
+
 The red arrows are our particles and the grey neato was our guessed position. If the red laser scan lines up with the steady map in the background, we know our estimated robot position and orientation is correct.
 
-## 1. Particle Cloud Initialization
+## 1. Particle Cloud Initialization and Weight Normalization
+**Particle Cloud Initialization**
 Each particle class contains 4 properties: `x`, `y`, `theta` (as orientation), and `w` (weight).
 There are two ways to initialize the particle cloud:
 1. Initialize all particles around the actual robot position with some variations. This is more computationally efficient and is easier to start with.
 2. Initialize the particle randomly on the map. This is called the robot kidnapping problem. We need to have more particles and potentially improved algorithm to make it fast enough.
 
-We sticked with 
+The above methods only differs in the positions and orientations. They both assign equal weight to each of the particles as we do not know which is better. We sticked with the first option but increased the variance as we developed the algorithm so we could still have a more spreadout cloud.
+
+**Weight Normalization**
+We need to always keep the sum of all weights to 1, because the probability is at most 1. Therefore, we need to sum the weight for each of the particle and then divide each of them by the sum.
+
+## 2. Update Particle Position Based on Motor Info
+The motor info we have from the neato was odometry was updated based on the wheel encoders which tells us the distance travelled and angle rotated. 
+
+Because each of the neato acts at its own confidence, it needs to perform the same movement on its own coordinate frame as the robot moves in odometry frame. 
+
+We perform 
