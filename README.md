@@ -1,6 +1,6 @@
 > # Robot Locolization
-> Author: Alexis Wu
-> Created on Oct. 2022
+> Author: Alexis Wu <br>
+> Created in Oct. 2022
 - All source code can be found in https://github.com/AlexisWu-01/compRobo22_robot_localization
 
 ---
@@ -28,3 +28,16 @@ I started by understanding from a high level about how the particle filter works
 Here is a diagram of a general idea of how our program works:
 ![Work map](https://github.com/AlexisWu-01/compRobo22_robot_localization/blob/main/demo_resources/work_map.png)
 
+# Implementation 
+Here is a recording of how our particle filter works:
+
+![Alt Text](https://github.com/AlexisWu-01/compRobo22_robot_localization/blob/main/demo_resources/pf_demo.gif)
+The red arrows are our particles and the grey neato was our guessed position. If the red laser scan lines up with the steady map in the background, we know our estimated robot position and orientation is correct.
+
+## 1. Particle Cloud Initialization
+Each particle class contains 4 properties: `x`, `y`, `theta` (as orientation), and `w` (weight).
+There are two ways to initialize the particle cloud:
+1. Initialize all particles around the actual robot position with some variations. This is more computationally efficient and is easier to start with.
+2. Initialize the particle randomly on the map. This is called the robot kidnapping problem. We need to have more particles and potentially improved algorithm to make it fast enough.
+
+We sticked with 
