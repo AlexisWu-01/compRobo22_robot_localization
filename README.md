@@ -52,4 +52,19 @@ The motor info we have from the neato was odometry was updated based on the whee
 
 Because each of the neato acts at its own confidence, it needs to perform the same movement on its own coordinate frame as the robot moves in odometry frame. 
 
-We perform 
+We perform matrix manipulation in this case:
+1. Represent old robot position in odometry fram, represent new robot position in odometry frame. (Both using translational and rotational matrices)
+2. Then we use the inverse of the first position in odometry and multiply it with the the second position in odometry to represent the new position to in the frame of old position.
+3. Finally we multiply the transformation matrix with another matrix to transfer the particle frame to map frame.
+
+During the process, we add noise to position and orientation of the updated particles to prevent [particle deprivation](https://homes.cs.washington.edu/~todorov/courses/cseP590/16_ParticleFilter.pdf) problem where there are no particles in the vicinity of the correct state and then we will never be able to find the correct position.
+
+## 3. Update Particle Weight Based on Sensor Info
+Here we calculate how well the sensor data -- laser scan of particles aligns with the actual laser scan from the robot. 
+We would have a list of data of angles `theta` from robot frame and the corresponding distances `r`. To calculate each (x,y) position on map frame, we need to transfer the actual angle based on map frame by adding the angle of the scan to particle orientation. Now with the positions of obstacles "should be" as if the particle is at the robot position, we use [occupancy field](https://en.wikipedia.org/wiki/Occupancy_grid_mapping) which returns the distance between the given point and the closest obstacle to it. In this case we were hoping for a 0 value from occupancy field which means the scan data at particle position aligns well with actual robot scan.
+
+### Likelihood Calculation - Gaussian Distribution
+ For assigning weight to particles based on how well their scan aligns with the actual robot scan. From the `occupancy_field`, we could read the error distance `d` for each scan. The likelihood of each scan is represented by $$p(x) = \frac{1}{\sigma \sqrt{2 \pi}} e^{-\frac{1}{2}(\frac{0-d}{\sigma})^2}$$
+![Gaussian Distribution]](https://github.com/AlexisWu-01/compRobo22_robot_localization/blob/main/demo_resources/gaussian_distribution.png)
+ In the diagram above we could clearly see that the highest possibility is where the input value x equals the mean value. In our case, we want to set the ideal distance from occupancy_field to 0. which is why we have `(0-d)` in the equation. The $\sigma$ stands for standard deviation, we could arbitrarily design its value to determin how "spreadout" our distribution is. Therefore, we would to give the particle a higher weight when the error distance is closer to 0. 
+ To make this bonus more distinctive between the particles, we first make it cube then add the result to weight for a more acute distribution curve. 
