@@ -5,13 +5,6 @@
 
 ---
 
-
-- How did you solve the problem? (Note: this doesn’t have to be super-detailed, you should try to explain what you did at a high-level so that others in the class could reasonably understand what you did).
-- Describe a design decision you had to make when working on your project and what you ultimately did (and why)? These design decisions could be particular choices for how you implemented some part of an algorithm or perhaps a decision regarding which of two external packages to use in your project.
-What if any challenges did you face along the way?
-- What would you do to improve your project if you had more time?
-- Did you learn any interesting lessons for future robotic programming projects? These could relate to working on robotics projects in teams, working on more open-ended (and longer term) problems, or any other relevant topic.
-
 ## Introduction
 The goal in this project is to implement a [particle filter](https://en.wikipedia.org/wiki/Particle_filter) on a map where we use a probablity based method to infer the position of the robot on a known map based on:
  - sensor measurement: laser scan
@@ -66,5 +59,49 @@ We would have a list of data of angles `theta` from robot frame and the correspo
 ### Likelihood Calculation - Gaussian Distribution
  For assigning weight to particles based on how well their scan aligns with the actual robot scan. From the `occupancy_field`, we could read the error distance `d` for each scan. The likelihood of each scan is represented by $$p(x) = \frac{1}{\sigma \sqrt{2 \pi}} e^{-\frac{1}{2}(\frac{0-d}{\sigma})^2}$$
 ![Gaussian Distribution](https://github.com/AlexisWu-01/compRobo22_robot_localization/blob/main/demo_resources/gaussian_distribution.png)
+
  In the diagram above we could clearly see that the highest possibility is where the input value x equals the mean value. In our case, we want to set the ideal distance from occupancy_field to 0. which is why we have `(0-d)` in the equation. The $\sigma$ stands for standard deviation, we could arbitrarily design its value to determin how "spreadout" our distribution is. Therefore, we would to give the particle a higher weight when the error distance is closer to 0. 
  To make this bonus more distinctive between the particles, we first make it cube then add the result to weight for a more acute distribution curve. 
+
+
+## 4. Resample Particles
+After each update of particle cloud is performed, we need to resample the particles based on their weight to randomly abandon the particles with lower weights. We used a technique called low variance resampling where we make sure the particles with higher possibilities are guaranteened to be selected rather than a completely random process. 
+We also reduce the number of particles if any particle has a confidence level greater than 40% to speed up our computation once we have a very likely estimation of the robot pose.
+
+## 5. Update robot pose
+`self.robot_pose` represents the best estimation of robot position. We chose 1 single particle with the highest possibility/ weight rather than calculating the mean of all particles to prevent the effect of outliers.
+
+# Challenges 
+## 1. Coordinates Transformation
+There were multiple frames to work with and generally we needed to transform everything to work on the map frame eventually. This was extremely hard when it came to `update_particles_with_odom`. The most intuitive way for implementation was to break down the robot movement ( rotate for an angle until it face towards the new x,y in map frame, then goes straight for $\sqrt{x^2+y^2}$ then rotate the particle to its current orientation) in its own frame and perform the same steps in each of the particle frame. 
+
+However, this simpler implementation was not computationally efficient. And therefore we introduced matrix manipution. The map was hard to understand so I had to draw a lot of diagrams and ask for explanation.
+
+There should be more and harder frame transformations in the process but luckily the scaffolder code handled it for us.
+
+## 2. Debugging
+With all new ros2 platform and unstable rviz2, debugging was extremely hard: the terminals would still run, but with warnings I could not notice or interprate or got covered by the print statments for debugging purpose (which did not work that well). Also due to the long break, I could only complete every function without debugging and testing each of them separately. The compleete system should take way longer than doing it along the way.
+
+However, I am optimistic about future debugging as I not only learned many techniques that are extremely useful during the office hours but also gaining more familarity on the tools as we use it.
+
+# Key Takeaways 
+## 1. Likelihood Field
+
+The concepts and the maths behind occupancy field and likelihood field did not make sense to me. Therefore I went through the lectures on youtube and read through related documents to gain a complete understanding of this. I believe this would be beneficial for future probablity related modellings.
+
+## 2. Resampling
+I did not find out the resampling method already exists in the helper function and went through the same process as above to deeply understand the underlying methods and be able to implement this algorithm from sketch.
+
+# Lessons Learned and Future Improvements
+
+#### Plan Ahead in Project Development
+I did not debug at every step of the way as I should have. As a result, I had to spend tremendous amount of time on debugging and visualizing after I have the whole program completed. Balancing among algorithm, code, debugging and test would be my priority in future project development.
+
+#### Ros Implementation vs. Algorithm Concepts
+The scaffold code saved a tremendous time on trying to find which could be a simple answer as we did in warmup project. However, with the current code I sort of naturally chose the MVP implementation wise as all I need was to follow the TODOs. I was able to explore the algorithm and mathematical aspects of a particle filter. But I would really like to work more on ros implementation just to learn more about its features and how it works.
+
+#### Computation Speed
+As we can see from the gif from implementation section, the particle filter works but was not able to follow the neato movement realtime. A great optimization would be using np matrix instead of the for loops in implementation or potentially use multithread programming. 
+
+#### Generalized Use
+Due to debugging and computation speed limits, I only tested the particle filter on gazebo map with particles initialized related to robot_pose. Once the program speed improves, I would like to test the particle filter on larger maps with unknown start position (robot kidnapping problem) and finally tune the variables like noises. 
